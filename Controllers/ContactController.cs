@@ -25,10 +25,7 @@ public class ContactController(AppDbContext db, EmailService emailService) : Con
         await db.SaveChangesAsync();
 
         // 2. Enviar email en segundo plano — responde al cliente sin esperar
-        var name    = contact.Name;
-        var email   = contact.Email;
-        var message = contact.Message;
-        _ = Task.Run(() => emailService.SendContactNotificationAsync(name, email, message));
+        _ = emailService.SendContactNotificationAsync(contact.Name, contact.Email, contact.Message);
 
         return Ok(new { message = "Mensaje recibido. ¡Pronto te responderemos!" });
     }

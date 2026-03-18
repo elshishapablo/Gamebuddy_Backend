@@ -1,5 +1,6 @@
-using System.Net;
-using System.Net.Mail;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace GameBuddy.API.Services;
 
@@ -7,54 +8,57 @@ public class EmailService(IConfiguration config, ILogger<EmailService> logger)
 {
     public async Task<bool> SendContactNotificationAsync(string fromName, string fromEmail, string message)
     {
-        var smtpHost = config["Smtp:Host"];
-        var smtpPort = int.Parse(config["Smtp:Port"] ?? "587");
-        var smtpUser = config["Smtp:Username"];
-        var smtpPass = config["Smtp:Password"];
-        var toEmail  = config["Smtp:ToEmail"];
+        var apiKey  = config["Resend:ApiKey"];
+        var toEmail = config["Resend:ToEmail"];
 
-        if (string.IsNullOrEmpty(smtpUser) || smtpUser == "TU_CORREO@gmail.com")
+        if (string.IsNullOrEmpty(apiKey) || apiKey == "re_TU_API_KEY")
         {
-            logger.LogWarning("SMTP no configurado. El mensaje se guardó en la BD pero no se envió email.");
+            logger.LogWarning("Resend no configurado. Mensaje guardado en BD pero no se envió email.");
             return false;
         }
 
         try
         {
-            using var client = new SmtpClient(smtpHost, smtpPort)
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var payload = new
             {
-                Credentials = new NetworkCredential(smtpUser, smtpPass),
-                EnableSsl = true,
-                Timeout = 10000, // 10 segundos máximo
+                from    = "GameBuddy <onboarding@resend.dev>",
+                to      = new[] { toEmail },
+                subject = $"[GameBuddy] Nuevo mensaje de {fromName}",
+                text    = $"""
+                           Nuevo mensaje de contacto en GameBuddy:
+
+                           Nombre:  {fromName}
+                           Email:   {fromEmail}
+                           Mensaje:
+                           {message}
+
+                           ---
+                           Responder a: {fromEmail}
+                           """
             };
 
-            var mail = new MailMessage
+            var json    = JsonSerializer.Serialize(payload);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            var response = await http.PostAsync("https://api.resend.com/emails", content);
+
+            if (response.IsSuccessStatusCode)
             {
-                From = new MailAddress(smtpUser, "GameBuddy"),
-                Subject = $"[GameBuddy] Nuevo mensaje de {fromName}",
-                Body = $"""
-                        Tienes un nuevo mensaje de contacto en GameBuddy:
+                logger.LogInformation("Email enviado via Resend desde {Email}", fromEmail);
+                return true;
+            }
 
-                        Nombre:  {fromName}
-                        Email:   {fromEmail}
-                        Mensaje:
-                        {message}
-
-                        ---
-                        Respondele directamente a: {fromEmail}
-                        """,
-                IsBodyHtml = false,
-            };
-
-            mail.To.Add(toEmail!);
-
-            await client.SendMailAsync(mail);
-            logger.LogInformation("Email de contacto enviado desde {Email}", fromEmail);
-            return true;
+            var error = await response.Content.ReadAsStringAsync();
+            logger.LogError("Resend error {Status}: {Error}", response.StatusCode, error);
+            return false;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error al enviar email de contacto");
+            logger.LogError(ex, "Error al enviar email via Resend");
             return false;
         }
     }
