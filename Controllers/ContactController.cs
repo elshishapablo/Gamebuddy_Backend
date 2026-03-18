@@ -24,11 +24,11 @@ public class ContactController(AppDbContext db, EmailService emailService) : Con
         db.ContactMessages.Add(contact);
         await db.SaveChangesAsync();
 
-        // 2. Intentar enviar email (no bloquea si falla)
-        contact.EmailSent = await emailService.SendContactNotificationAsync(
-            contact.Name, contact.Email, contact.Message);
-
-        await db.SaveChangesAsync();
+        // 2. Enviar email en segundo plano — responde al cliente sin esperar
+        var name    = contact.Name;
+        var email   = contact.Email;
+        var message = contact.Message;
+        _ = Task.Run(() => emailService.SendContactNotificationAsync(name, email, message));
 
         return Ok(new { message = "Mensaje recibido. ¡Pronto te responderemos!" });
     }

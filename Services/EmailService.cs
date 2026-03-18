@@ -25,6 +25,7 @@ public class EmailService(IConfiguration config, ILogger<EmailService> logger)
             {
                 Credentials = new NetworkCredential(smtpUser, smtpPass),
                 EnableSsl = true,
+                Timeout = 10000, // 10 segundos máximo
             };
 
             var mail = new MailMessage
